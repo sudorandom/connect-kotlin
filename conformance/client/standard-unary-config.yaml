@@ -2,6 +2,7 @@
 # supports and that will be verified by the
 # conformance test suite.
 features:
+  supportsConnectQuery: true
   versions:
     - HTTP_VERSION_1
     - HTTP_VERSION_2

@@ -44,6 +44,7 @@ import com.connectrpc.http.Timeout
 import com.connectrpc.impl.ProtocolClient
 import com.connectrpc.okhttp.ConnectOkHttpClient
 import com.connectrpc.protocols.GETConfiguration
+import com.connectrpc.protocols.QUERYConfiguration
 import com.google.protobuf.MessageLite
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -498,6 +499,8 @@ class Client(
         }
         // TODO: need to support max receive bytes and use req.receiveLimitBytes
         val getConfig = if (req.useGetHttpMethod) GETConfiguration.Enabled else GETConfiguration.Disabled
+        // QUERY replaces POST, not GET, so the suite never sets both.
+        val queryConfig = if (req.useQueryHttpMethod) QUERYConfiguration.Enabled else QUERYConfiguration.Disabled
         val requestCompression =
             if (req.compression == Compression.GZIP) {
                 RequestCompression(0, GzipCompressionPool)
@@ -538,6 +541,7 @@ class Client(
                     serializationStrategy = serializationStrategy,
                     networkProtocol = req.protocol,
                     getConfiguration = getConfig,
+                    queryConfiguration = queryConfig,
                     requestCompression = requestCompression,
                     compressionPools = compressionPools,
                     timeoutScheduler = timeoutScheduler,

@@ -47,6 +47,7 @@ interface ClientCompatRequest {
     val timeoutMs: Int
     val requestDelayMs: Int
     val useGetHttpMethod: Boolean
+    val useQueryHttpMethod: Boolean
     val httpVersion: HttpVersion
     val protocol: NetworkProtocol
     val codec: Codec

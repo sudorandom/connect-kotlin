@@ -197,6 +197,8 @@ class JavaHelpers {
             get() = msg.requestDelayMs
         override val useGetHttpMethod: Boolean
             get() = msg.useGetHttpMethod
+        override val useQueryHttpMethod: Boolean
+            get() = msg.useQueryHttpMethod
         override val httpVersion: HttpVersion
             get() = when (msg.httpVersion) {
                 HTTPVersion.HTTP_VERSION_1 -> HttpVersion.HTTP_1_1
