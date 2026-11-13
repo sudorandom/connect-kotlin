@@ -121,9 +121,9 @@ class ConnectOkHttpClient @JvmOverloads constructor(
         }
         val content = request.message
         val method = request.httpMethod.string
-        // OkHttp only considers POST, PUT, PATCH and a few WebDAV methods to
-        // require a body, so QUERY must be listed explicitly. Without this the
-        // body would be dropped.
+        // OkHttp 5.2.0 and later already treat QUERY as requiring a body. The
+        // explicit check keeps the body from being dropped if an older OkHttp
+        // is resolved, where QUERY is not in its list of methods with a body.
         val requestBody = if (HttpMethod.requiresRequestBody(method) || request.httpMethod == HTTPMethod.QUERY) {
             object : RequestBody() {
                 override fun contentType() = request.contentType.toMediaType()
