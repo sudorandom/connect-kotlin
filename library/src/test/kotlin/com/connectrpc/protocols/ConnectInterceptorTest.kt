@@ -854,6 +854,185 @@ class ConnectInterceptorTest {
         assertThat(request.httpMethod).isEqualTo(HTTPMethod.GET)
     }
 
+    @Test
+    fun queryRequestCreatedForEligibleUnary() {
+        val config = ProtocolClientConfig(
+            host = "https://connectrpc.com",
+            serializationStrategy = serializationStrategy,
+            compressionPools = emptyList(),
+            queryConfiguration = QUERYConfiguration.Enabled,
+        )
+        val request = queryRequestFunction(config, Idempotency.NO_SIDE_EFFECTS, StreamType.UNARY)
+
+        assertThat(request.httpMethod).isEqualTo(HTTPMethod.QUERY)
+        assertThat(request.httpMethod.string).isEqualTo("QUERY")
+        // None of the GET encoding applies: same URL, content type, headers and body as POST.
+        assertThat(request.url.encodedQuery).isEmpty()
+        assertThat(request.contentType).isEqualTo("content_type")
+        assertThat(request.headers[CONNECT_PROTOCOL_VERSION_KEY]).containsExactly(CONNECT_PROTOCOL_VERSION_VALUE)
+        assertThat(request.headers["key"]).containsExactly("value")
+        assertThat(request.message.readUtf8()).isEqualTo("message")
+    }
+
+    @Test
+    fun queryRequestHasSameShapeAsPost() {
+        val queryRequest = queryRequestFunction(
+            ProtocolClientConfig(
+                host = "https://connectrpc.com",
+                serializationStrategy = serializationStrategy,
+                compressionPools = emptyList(),
+                queryConfiguration = QUERYConfiguration.Enabled,
+            ),
+            Idempotency.NO_SIDE_EFFECTS,
+            StreamType.UNARY,
+        )
+        val postRequest = queryRequestFunction(
+            ProtocolClientConfig(
+                host = "https://connectrpc.com",
+                serializationStrategy = serializationStrategy,
+                compressionPools = emptyList(),
+            ),
+            Idempotency.NO_SIDE_EFFECTS,
+            StreamType.UNARY,
+        )
+        assertThat(postRequest.httpMethod).isEqualTo(HTTPMethod.POST)
+        assertThat(queryRequest.url).isEqualTo(postRequest.url)
+        assertThat(queryRequest.contentType).isEqualTo(postRequest.contentType)
+        assertThat(queryRequest.headers).isEqualTo(postRequest.headers)
+        assertThat(queryRequest.message.readUtf8()).isEqualTo(postRequest.message.readUtf8())
+    }
+
+    @Test
+    fun queryRequestWithEmptyBody() {
+        val config = ProtocolClientConfig(
+            host = "https://connectrpc.com",
+            serializationStrategy = serializationStrategy,
+            compressionPools = emptyList(),
+            queryConfiguration = QUERYConfiguration.Enabled,
+        )
+        val request = queryRequestFunction(config, Idempotency.NO_SIDE_EFFECTS, StreamType.UNARY, message = "")
+        assertThat(request.httpMethod).isEqualTo(HTTPMethod.QUERY)
+        assertThat(request.message.size).isEqualTo(0)
+    }
+
+    @Test
+    fun postRequestCreatedWhenQueryDisabled() {
+        val config = ProtocolClientConfig(
+            host = "https://connectrpc.com",
+            serializationStrategy = serializationStrategy,
+            compressionPools = emptyList(),
+        )
+        assertThat(config.queryConfiguration).isEqualTo(QUERYConfiguration.Disabled)
+        val request = queryRequestFunction(config, Idempotency.NO_SIDE_EFFECTS, StreamType.UNARY)
+        assertThat(request.httpMethod).isEqualTo(HTTPMethod.POST)
+    }
+
+    @Test
+    fun postRequestCreatedForIneligibleIdempotencyWithQueryEnabled() {
+        val config = ProtocolClientConfig(
+            host = "https://connectrpc.com",
+            serializationStrategy = serializationStrategy,
+            compressionPools = emptyList(),
+            queryConfiguration = QUERYConfiguration.Enabled,
+        )
+        for (idempotency in listOf(Idempotency.UNKNOWN, Idempotency.IDEMPOTENT)) {
+            val request = queryRequestFunction(config, idempotency, StreamType.UNARY)
+            assertThat(request.httpMethod).isEqualTo(HTTPMethod.POST)
+        }
+    }
+
+    @Test
+    fun postRequestCreatedForNonUnaryWithQueryEnabled() {
+        val config = ProtocolClientConfig(
+            host = "https://connectrpc.com",
+            serializationStrategy = serializationStrategy,
+            compressionPools = emptyList(),
+            queryConfiguration = QUERYConfiguration.Enabled,
+        )
+        val request = queryRequestFunction(config, Idempotency.NO_SIDE_EFFECTS, StreamType.SERVER)
+        assertThat(request.httpMethod).isEqualTo(HTTPMethod.POST)
+    }
+
+    @Test
+    fun getTakesPrecedenceOverQueryWhenPayloadFits() {
+        val config = ProtocolClientConfig(
+            host = "https://connectrpc.com",
+            serializationStrategy = serializationStrategy,
+            compressionPools = emptyList(),
+            getConfiguration = GETConfiguration.EnabledWithFallback(maxMessageBytes = 10_000),
+            queryConfiguration = QUERYConfiguration.Enabled,
+        )
+        val request = queryRequestFunction(config, Idempotency.NO_SIDE_EFFECTS, StreamType.UNARY)
+        assertThat(request.httpMethod).isEqualTo(HTTPMethod.GET)
+    }
+
+    @Test
+    fun queryReplacesPostFallbackWhenPayloadOverGetLimit() {
+        val config = ProtocolClientConfig(
+            host = "https://connectrpc.com",
+            serializationStrategy = serializationStrategy,
+            compressionPools = emptyList(),
+            getConfiguration = GETConfiguration.EnabledWithFallback(maxMessageBytes = 1),
+            queryConfiguration = QUERYConfiguration.Enabled,
+        )
+        val request = queryRequestFunction(config, Idempotency.NO_SIDE_EFFECTS, StreamType.UNARY)
+        assertThat(request.httpMethod).isEqualTo(HTTPMethod.QUERY)
+        assertThat(request.url.encodedQuery).isEmpty()
+        assertThat(request.message.readUtf8()).isEqualTo("message")
+    }
+
+    @Test
+    fun postFallbackRemainsWhenQueryDisabled() {
+        val config = ProtocolClientConfig(
+            host = "https://connectrpc.com",
+            serializationStrategy = serializationStrategy,
+            compressionPools = emptyList(),
+            getConfiguration = GETConfiguration.EnabledWithFallback(maxMessageBytes = 1),
+        )
+        val request = queryRequestFunction(config, Idempotency.NO_SIDE_EFFECTS, StreamType.UNARY)
+        assertThat(request.httpMethod).isEqualTo(HTTPMethod.POST)
+    }
+
+    @Test
+    fun queryRequestCompression() {
+        val config = ProtocolClientConfig(
+            host = "https://connectrpc.com",
+            serializationStrategy = serializationStrategy,
+            requestCompression = RequestCompression(1, GzipCompressionPool),
+            compressionPools = listOf(GzipCompressionPool),
+            queryConfiguration = QUERYConfiguration.Enabled,
+        )
+        val request = queryRequestFunction(config, Idempotency.NO_SIDE_EFFECTS, StreamType.UNARY)
+        assertThat(request.httpMethod).isEqualTo(HTTPMethod.QUERY)
+        assertThat(request.headers[CONTENT_ENCODING]).containsExactly("gzip")
+        assertThat(GzipCompressionPool.decompress(request.message).readUtf8()).isEqualTo("message")
+    }
+
+    private fun queryRequestFunction(
+        config: ProtocolClientConfig,
+        idempotency: Idempotency,
+        streamType: StreamType,
+        message: String = "message",
+    ): UnaryHTTPRequest {
+        val unaryFunction = ConnectInterceptor(config).unaryFunction()
+        return unaryFunction.requestFunction(
+            UnaryHTTPRequest(
+                url = Url(config.host),
+                contentType = "content_type",
+                timeout = null,
+                headers = mapOf("key" to listOf("value")),
+                message = Buffer().write(message.encodeUtf8()),
+                methodSpec = MethodSpec(
+                    path = "",
+                    requestClass = Any::class,
+                    responseClass = Any::class,
+                    streamType = streamType,
+                    idempotency = idempotency,
+                ),
+            ),
+        )
+    }
+
     private fun parseQuery(request: HTTPRequest) = request.url.encodedQuery
         .split("&")
         .map { str ->

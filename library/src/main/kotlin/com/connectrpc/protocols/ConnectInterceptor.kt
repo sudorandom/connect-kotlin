@@ -86,12 +86,19 @@ internal class ConnectInterceptor(
                 if (shouldUseGETRequest(request, finalRequestBody)) {
                     constructGETRequest(request, finalRequestBody, requestCompression)
                 } else {
+                    // QUERY is built exactly like POST with only the method changed.
+                    val httpMethod = if (shouldUseQUERYRequest(request)) {
+                        HTTPMethod.QUERY
+                    } else {
+                        request.httpMethod
+                    }
                     request.clone(
                         url = request.url,
                         contentType = request.contentType,
                         headers = requestHeaders,
                         methodSpec = request.methodSpec,
                         message = finalRequestBody,
+                        httpMethod = httpMethod,
                     )
                 }
             },
@@ -243,6 +250,12 @@ internal class ConnectInterceptor(
         return request.methodSpec.streamType == StreamType.UNARY &&
             request.methodSpec.idempotency == Idempotency.NO_SIDE_EFFECTS &&
             clientConfig.getConfiguration.useGET(finalRequestBody)
+    }
+
+    private fun shouldUseQUERYRequest(request: HTTPRequest): Boolean {
+        return request.methodSpec.streamType == StreamType.UNARY &&
+            request.methodSpec.idempotency == Idempotency.NO_SIDE_EFFECTS &&
+            clientConfig.queryConfiguration.useQUERY()
     }
 
     private fun constructGETRequest(

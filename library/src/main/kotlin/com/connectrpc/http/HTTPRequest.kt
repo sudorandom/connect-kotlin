@@ -25,6 +25,7 @@ enum class HTTPMethod(
 ) {
     GET("GET"),
     POST("POST"),
+    QUERY("QUERY"),
 }
 
 /**
@@ -88,7 +89,8 @@ class UnaryHTTPRequest(
     // Body data for the request.
     val message: Buffer,
     // HTTP method to use with the request.
-    // Almost always POST, but side effect free unary RPCs may be made with GET.
+    // Almost always POST, but side effect free unary RPCs may be made with GET
+    // or QUERY.
     val httpMethod: HTTPMethod = HTTPMethod.POST,
 ) : HTTPRequest(url, contentType, timeout, headers, methodSpec)
 

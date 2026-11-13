@@ -17,6 +17,7 @@ package com.connectrpc.impl
 import com.connectrpc.Code
 import com.connectrpc.Codec
 import com.connectrpc.ConnectException
+import com.connectrpc.Idempotency
 import com.connectrpc.MethodSpec
 import com.connectrpc.ProtocolClientConfig
 import com.connectrpc.ResponseMessage
@@ -25,11 +26,13 @@ import com.connectrpc.StreamResult
 import com.connectrpc.StreamType
 import com.connectrpc.http.Cancelable
 import com.connectrpc.http.HTTPClientInterface
+import com.connectrpc.http.HTTPMethod
 import com.connectrpc.http.HTTPRequest
 import com.connectrpc.http.HTTPResponse
 import com.connectrpc.http.Stream
 import com.connectrpc.http.Timeout
 import com.connectrpc.http.UnaryHTTPRequest
+import com.connectrpc.protocols.QUERYConfiguration
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +45,7 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.atLeastOnce
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import java.util.concurrent.CountDownLatch
@@ -188,6 +192,64 @@ class ProtocolClientTest {
         val captor = argumentCaptor<UnaryHTTPRequest>()
         verify(httpClient).unary(captor.capture(), any())
         assertThat(captor.firstValue.url.toString()).isEqualTo("https://connectrpc.com/api/com.connectrpc.SomeService/Service")
+    }
+
+    @Test
+    fun unaryUsesQueryWithDeterministicSerialization() {
+        whenever(codec.encodingName()).thenReturn("testing")
+        whenever(codec.serialize(any())).thenReturn(Buffer())
+        whenever(codec.deterministicSerialize(any())).thenReturn(Buffer())
+        whenever(serializationStrategy.codec<String>(any())).thenReturn(codec)
+
+        val client = createClient("https://connectrpc.com/", QUERYConfiguration.Enabled)
+        client.unary("input", emptyMap(), createMethodSpec(StreamType.UNARY, Idempotency.NO_SIDE_EFFECTS)) { _ -> }
+        val captor = argumentCaptor<UnaryHTTPRequest>()
+        verify(httpClient).unary(captor.capture(), any())
+        assertThat(captor.firstValue.httpMethod).isEqualTo(HTTPMethod.QUERY)
+        verify(codec).deterministicSerialize("input")
+    }
+
+    @Test
+    fun unaryUsesPostWhenQueryDisabled() {
+        whenever(codec.encodingName()).thenReturn("testing")
+        whenever(codec.serialize(any())).thenReturn(Buffer())
+        whenever(serializationStrategy.codec<String>(any())).thenReturn(codec)
+
+        val client = createClient("https://connectrpc.com/")
+        client.unary("input", emptyMap(), createMethodSpec(StreamType.UNARY, Idempotency.NO_SIDE_EFFECTS)) { _ -> }
+        val captor = argumentCaptor<UnaryHTTPRequest>()
+        verify(httpClient).unary(captor.capture(), any())
+        assertThat(captor.firstValue.httpMethod).isEqualTo(HTTPMethod.POST)
+    }
+
+    @Test
+    fun methodNotAllowedForQueryIsNotRetriedWithPost() {
+        whenever(codec.encodingName()).thenReturn("testing")
+        whenever(codec.deterministicSerialize(any())).thenReturn(Buffer())
+        whenever(serializationStrategy.codec<String>(any())).thenReturn(codec)
+        whenever(httpClient.unary(any(), any())).thenAnswer { invocation ->
+            val onResult = invocation.getArgument<(HTTPResponse) -> Unit>(1)
+            onResult(
+                HTTPResponse(
+                    status = 405,
+                    headers = mapOf("allow" to listOf("POST")),
+                    message = Buffer(),
+                    trailers = emptyMap(),
+                ),
+            )
+            val cancelable: Cancelable = {}
+            cancelable
+        }
+
+        val client = createClient("https://connectrpc.com/", QUERYConfiguration.Enabled)
+        var response: ResponseMessage<String>? = null
+        client.unary("input", emptyMap(), createMethodSpec(StreamType.UNARY, Idempotency.NO_SIDE_EFFECTS)) { result ->
+            response = result
+        }
+        assertThat(response).isInstanceOf(ResponseMessage.Failure::class.java)
+        val captor = argumentCaptor<UnaryHTTPRequest>()
+        verify(httpClient, times(1)).unary(captor.capture(), any())
+        assertThat(captor.firstValue.httpMethod).isEqualTo(HTTPMethod.QUERY)
     }
 
     @Test
@@ -338,22 +400,30 @@ class ProtocolClientTest {
         return Pair({ result -> onResult!!(result) }, httpStream)
     }
 
-    private fun createClient(host: String): ProtocolClient {
+    private fun createClient(
+        host: String,
+        queryConfiguration: QUERYConfiguration = QUERYConfiguration.Disabled,
+    ): ProtocolClient {
         return ProtocolClient(
             httpClient = httpClient,
             config = ProtocolClientConfig(
                 host = host,
                 serializationStrategy = serializationStrategy,
+                queryConfiguration = queryConfiguration,
             ),
         )
     }
 
-    private fun createMethodSpec(streamType: StreamType): MethodSpec<String, String> {
+    private fun createMethodSpec(
+        streamType: StreamType,
+        idempotency: Idempotency = Idempotency.UNKNOWN,
+    ): MethodSpec<String, String> {
         return MethodSpec(
             path = "com.connectrpc.SomeService/Service",
             String::class,
             String::class,
             streamType,
+            idempotency,
         )
     }
 }

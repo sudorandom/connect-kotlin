@@ -20,6 +20,7 @@ import com.connectrpc.StreamResult
 import com.connectrpc.asConnectException
 import com.connectrpc.http.Cancelable
 import com.connectrpc.http.HTTPClientInterface
+import com.connectrpc.http.HTTPMethod
 import com.connectrpc.http.HTTPRequest
 import com.connectrpc.http.HTTPResponse
 import com.connectrpc.http.Stream
@@ -101,7 +102,7 @@ class ConnectOkHttpClient @JvmOverloads constructor(
 
         private fun isConnectUnary(req: Request): Boolean {
             return when (req.method) {
-                "POST" -> req.headers[CONNECT_PROTOCOL_VERSION_KEY].orEmpty() == CONNECT_PROTOCOL_VERSION_VALUE &&
+                "POST", "QUERY" -> req.headers[CONNECT_PROTOCOL_VERSION_KEY].orEmpty() == CONNECT_PROTOCOL_VERSION_VALUE &&
                     req.headers["Content-Type"].orEmpty().startsWith("application/")
 
                 "GET" -> req.url.queryParameter(GETConstants.CONNECT_VERSION_QUERY_PARAM_KEY) == GETConstants.CONNECT_VERSION_QUERY_PARAM_VALUE
@@ -120,7 +121,10 @@ class ConnectOkHttpClient @JvmOverloads constructor(
         }
         val content = request.message
         val method = request.httpMethod.string
-        val requestBody = if (HttpMethod.requiresRequestBody(method)) {
+        // OkHttp only considers POST, PUT, PATCH and a few WebDAV methods to
+        // require a body, so QUERY must be listed explicitly. Without this the
+        // body would be dropped.
+        val requestBody = if (HttpMethod.requiresRequestBody(method) || request.httpMethod == HTTPMethod.QUERY) {
             object : RequestBody() {
                 override fun contentType() = request.contentType.toMediaType()
                 override fun contentLength() = content.size

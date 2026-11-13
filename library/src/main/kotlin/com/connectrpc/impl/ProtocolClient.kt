@@ -38,6 +38,7 @@ import com.connectrpc.http.UnaryHTTPRequest
 import com.connectrpc.http.dispatchIn
 import com.connectrpc.http.transform
 import com.connectrpc.protocols.GETConfiguration
+import com.connectrpc.protocols.QUERYConfiguration
 import io.ktor.http.URLBuilder
 import io.ktor.http.Url
 import io.ktor.http.appendPathSegments
@@ -84,8 +85,10 @@ class ProtocolClient(
         val serializationStrategy = config.serializationStrategy
         val requestCodec = serializationStrategy.codec(methodSpec.requestClass)
         try {
-            val requestMessage = if (config.getConfiguration != GETConfiguration.Disabled) {
-                // Use deterministic serialization when GET request configuration is set.
+            val requestMessage = if (config.getConfiguration != GETConfiguration.Disabled ||
+                config.queryConfiguration != QUERYConfiguration.Disabled
+            ) {
+                // Use deterministic serialization when GET or QUERY request configuration is set.
                 requestCodec.deterministicSerialize(request)
             } else {
                 requestCodec.serialize(request)

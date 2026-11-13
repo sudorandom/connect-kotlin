@@ -22,6 +22,7 @@ import com.connectrpc.protocols.GETConfiguration
 import com.connectrpc.protocols.GRPCInterceptor
 import com.connectrpc.protocols.GRPCWebInterceptor
 import com.connectrpc.protocols.NetworkProtocol
+import com.connectrpc.protocols.QUERYConfiguration
 import io.ktor.http.Url
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration
@@ -89,6 +90,9 @@ class ProtocolClientConfig @JvmOverloads constructor(
     val timeoutOracle: TimeoutOracle = { 10.toDuration(DurationUnit.SECONDS) },
     // Schedules timeout actions.
     val timeoutScheduler: Timeout.Scheduler = Timeout.DEFAULT_SCHEDULER,
+    // The HTTP QUERY (RFC 10008) configuration for the Connect protocol.
+    // By default, this is disabled.
+    val queryConfiguration: QUERYConfiguration = QUERYConfiguration.Disabled,
 ) {
     private val internalInterceptorFactoryList = mutableListOf<(ProtocolClientConfig) -> Interceptor>()
     private val compressionPools = mutableMapOf<String, CompressionPool>()
